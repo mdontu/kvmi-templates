@@ -1,0 +1,144 @@
+- hosts: all
+  become: yes
+  
+  tasks:
+  - name: get the kernel release string
+    shell: "uname -r"
+    register: guest_uname
+  
+  - name: update the apt cache
+    apt:
+      update_cache: yes
+  
+  - name: install kernel build dependencies
+    apt:
+      name: linux-image-{{ guest_uname.stdout }}
+      state: build-dep
+
+  - name: install extra dependencies
+    apt:
+      name:
+        - libncurses-dev
+        - flex
+        - bison
+        - openssl
+        - libssl-dev
+        - dkms
+        - libelf-dev
+        - libudev-dev
+        - libpci-dev
+        - libiberty-dev
+        - autoconf
+      state: present
+
+  - name: fetch the Linux kernel with the KVMI patches
+    git:
+      repo: 'https://github.com/KVM-VMI/kvm.git'
+      dest: /usr/src/kvmi
+      version: kvmi-v7
+      
+  - name: build and install the KVMI enabled kernel
+    shell: |
+      yes "" | make oldconfig
+      scripts/config --enable KVM_INTROSPECTION
+      scripts/config --enable KVM_INTROSPECTION_GUEST
+      scripts/config --enable REMOTE_MAPPING
+      scripts/config --disable CONFIG_KSM
+      scripts/config --disable TRANSPARENT_HUGEPAGE
+      make -j`nproc`
+      make modules_install
+      make install
+      update-grub
+      make clean
+      make prepare
+    args:
+      chdir: /usr/src/kvmi
+    environment:
+      INSTALL_MOD_STRIP: "1"
+
+  - name: reboot into the new kernel
+    reboot:
+      reboot_timeout: 300
+
+  - name: fetch the libkvmi sources
+    git:
+      repo: https://github.com/bitdefender/libkvmi.git
+      dest: /usr/src/libkvmi
+      version: master
+
+  - name: build and install libkvmi
+    shell: |
+      ./bootstrap
+      mkdir build
+      cd build
+      ../configure --prefix=/usr/local --enable-optimize
+      make
+      make install
+      cd ..
+      rm -rf build
+    args:
+      chdir: /usr/src/libkvmi
+
+  - name: install the packages needed to build libbdvmi
+    apt:
+      name:
+        - libboost-all-dev
+        - libxen-dev
+        - pkg-config
+        - uuid-dev
+      state: present
+
+  - name: fetch the libbdvmi sources
+    git:
+      repo: https://github.com/bitdefender/libbdvmi.git
+      dest: /usr/src/libbdvmi
+      version: master
+
+  - name: build and install libbdvmi
+    shell: |
+      ./bootstrap
+      mkdir build
+      cd build
+      ../configure --prefix=/usr/local --enable-kvmi --enable-optimize
+      make
+      make install
+      cd ..
+      rm -rf build
+    args:
+      chdir: /usr/src/libbdvmi
+
+  - name: install the packages needed to build hvmi
+    apt:
+      name:
+        - cmake
+        - libjsoncpp-dev
+      state: present
+  
+  - name: fetch the hvmi sources
+    git:
+      repo: https://github.com/hvmi/hvmi.git
+      dest: /usr/src/hvmi
+      version: master
+      recursive: yes
+
+  - name: install and build hvmi
+    shell: |
+      mkdir build
+      cd build
+      cmake -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_BUILD_TYPE=Release ..
+      make
+      make install
+      cd ../daemon
+      mkdir build
+      cd build
+      cmake -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_BUILD_TYPE=Release ..
+      make
+      make install
+      cd ..
+      rm -rf build daemon/build
+    args:
+      chdir: /usr/src/hvmi
+
+  - name: zero-out the free space
+    shell: dd if=/dev/zero of=a bs=1M 2>/dev/null; rm -f a
+
