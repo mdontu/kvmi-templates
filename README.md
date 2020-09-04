@@ -13,7 +13,7 @@ Coming soon.
 
 ## Guest Template
 
-It is an Ubuntu 20.04 with the following specifications:
+It is based on Ubuntu 20.04 with the following specifications:
 
  * 32GiB disk
  * Linux kernel + KVMI patches (see [this](https://github.com/KVM-VMI/kvm/) and [this](https://lore.kernel.org/kvm/20200721210922.7646-1-alazar@bitdefender.com/))
@@ -23,4 +23,7 @@ It is an Ubuntu 20.04 with the following specifications:
 
 It essentially follows the steps described in [this blog post](https://hvmi.github.io/blog/2020/08/10/getting-started-on-kvm.html).
 
-**NOTE**: The templates have been created using Packer 1.6.2 and Ansible 2.9.6 on Ubuntu 20.04.
+**NOTES**
+
+ * The templates have been created using Packer 1.6.2 and Ansible 2.9.6 on Ubuntu 20.04
+ * The build process can take well over an hour and produces a qcow2 disk image of ~7GiB
