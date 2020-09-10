@@ -1,0 +1,143 @@
+- hosts: all
+  become: yes
+  
+  tasks:
+  - name: update the APT cache
+    apt:
+      update_cache: yes
+  
+  - name: upgrade all packages
+    apt:
+      upgrade: full
+
+  - name: reboot into the updated system
+    reboot:
+      reboot_timeout: 300
+
+  - name: remove unneeded packages
+    apt:
+      autoremove: yes
+  
+  - name: get the kernel release string
+    shell: uname -r
+    register: guest_uname
+  
+  - name: update the apt cache
+    apt:
+      update_cache: yes
+  
+  - name: install kernel build dependencies
+    apt:
+      name: linux-image-{{ guest_uname.stdout }}
+      state: build-dep
+
+  - name: install extra dependencies
+    apt:
+      name:
+        - libncurses-dev
+        - flex
+        - bison
+        - openssl
+        - libssl-dev
+        - dkms
+        - libelf-dev
+        - libudev-dev
+        - libpci-dev
+        - libiberty-dev
+        - autoconf
+      state: present
+
+  - name: fetch the Linux kernel with the KVMI patches
+    git:
+      repo: https://github.com/KVM-VMI/kvm.git
+      dest: /usr/src/kvmi
+      version: kvmi-v7
+      
+  - name: build and install the KVMI enabled kernel
+    shell: |
+      yes "" | make oldconfig
+      scripts/config --enable KVM_INTROSPECTION
+      scripts/config --enable KVM_INTROSPECTION_GUEST
+      scripts/config --enable REMOTE_MAPPING
+      scripts/config --disable CONFIG_KSM
+      scripts/config --disable TRANSPARENT_HUGEPAGE
+      make -j`nproc`
+      make modules_install
+      make install
+      update-grub
+      make clean
+      make prepare
+    args:
+      chdir: /usr/src/kvmi
+    environment:
+      INSTALL_MOD_STRIP: 1
+
+  - name: vhost-vsock config for modules-load
+    copy:
+      dest: /etc/modules-load.d/vhost-vsock.conf
+      content: vhost-vsock
+
+  - name: vhost-vsock udev rule
+    copy:
+      dest: /etc/udev/rules.d/10-vhost-vsock.rules
+      content: KERNEL=="vhost-vsock", GROUP="kvm", MODE="0660"
+
+  - name: update all initramfs images
+    shell: update-initramfs -k all -u
+      
+  - name: reboot into the new kernel
+    reboot:
+      reboot_timeout: 300
+
+  - name: install libvirt
+    apt:
+      name:
+        - libvirt-daemon
+        - libvirt-daemon-system
+        - libvirt-daemon-system-systemd
+      state: present      
+
+  - name: install qemu-kvm build dependencies
+    apt:
+      name: qemu-kvm
+      state: build-dep
+
+  - name: fetch qemu with the KVMI patches
+    git:
+      repo: https://github.com/KVM-VMI/qemu.git
+      dest: /usr/src/qemu-kvmi
+      version: kvmi-v7
+      
+  - name: build and install the KVMI enabled qemu
+    shell: |
+      mkdir build
+      cd build
+      ../configure --prefix=/usr/local --python=`which python3` --target-list=x86_64-softmmu --disable-werror
+      make -j`nproc`
+      make install
+      cd ..
+      rm -rf build
+    args:
+      chdir: /usr/src/qemu-kvmi
+
+  - name: reconfigure qemu for libvirt
+    replace:
+      path: /etc/libvirt/qemu.conf
+      regexp: "([\\W\\w]*)(#cgroup_device_acl[^\\]]+#\\])([\\W\\w]*)"
+      replace: |
+        \1
+        cgroup_device_acl = [
+            "/dev/null", "/dev/full", "/dev/zero",
+            "/dev/random", "/dev/urandom",
+            "/dev/ptmx", "/dev/kvm", "/dev/kqemu",
+            "/dev/rtc", "/dev/hpet", "/dev/vfio/vfio",
+            "/dev/vhost-vsock"
+        ]
+        \3
+
+  - name: clean the APT cache
+    apt:
+      autoclean: yes
+        
+  - name: zero-out the free space
+    shell: dd if=/dev/zero of=a bs=1M count=32768 2>/dev/null; rm -f a; sync

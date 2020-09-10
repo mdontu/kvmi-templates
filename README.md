@@ -9,7 +9,13 @@ This repository contains the Packer templates for creating the host and guest im
 
 ## Host Template
 
-Coming soon.
+It is based on Ubuntu 20.04 with the following specifications:
+
+ * 100GiB disk
+ * Linux kernel + KVMI patches (see [this](https://github.com/KVM-VMI/kvm/) and [this](https://lore.kernel.org/kvm/20200721210922.7646-1-alazar@bitdefender.com/))
+ * qemu + KVMI patches (see [this](https://github.com/KVM-VMI/qemu) and [this](https://lists.nongnu.org/archive/html/qemu-devel/2020-04/msg02229.html))
+
+After installing `kvmi-guest` and the guest to be introspected, you will need to reconfigure the two VMs in order to enable introspection, as described in [this article](https://hvmi.github.io/blog/2020/08/10/getting-started-on-kvm.html).
 
 ## Guest Template
 
